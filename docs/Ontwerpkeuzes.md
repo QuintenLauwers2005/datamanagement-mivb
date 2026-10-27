@@ -1,6 +1,6 @@
 # Ontwerpkeuzes
 
-Bij elke keuze: wat ik gekozen heb en waarom. 
+Bij elke keuze: wat ik gekozen heb en waarom. Aanvullen tijdens het bouwen.
 
 ## Dataset
 
@@ -37,7 +37,22 @@ Bij elke keuze: wat ik gekozen heb en waarom.
 
 - Eerst ruwe import in staging-tabellen (alle kolommen VARCHAR2), daarna transformatie naar het eigen model met INSERT ... SELECT. Zo faalt de import niet op datatypes en zijn importeren en modelleren gescheiden.
 
-## Te controleren tijdens de import
+## Resultaten controle staging (tests/01_controle_staging.sql)
 
-- Komen alle `service_id`'s uit `calendar_dates` ook voor in `calendar`? (In GTFS is dat niet verplicht. Zo niet: ook die in `dienstregeling` opnemen.)
-- Bestaan alle `parent_station`-waarden als `stop_id` in `stops`?
+| Controle | Resultaat | Gevolg voor het datamodel |
+|---|---|---|
+| Aantal rijen | 86 lijnen, 2.752 haltes, 73.322 ritten, 1.559.649 doortochten, 339 dienstregelingen, 538 uitzonderingen | Alles volledig geladen (stop_times = 1.559.650 regels min de header) |
+| Max. lengte codes | route_id 2, service_id 9, trip_id 18, stop_id 7, stop_name 35 | Lengtes: lijn_id VARCHAR2(10), service_id VARCHAR2(10), rit_id VARCHAR2(20), halte_id VARCHAR2(10), namen VARCHAR2(100). Kleine marge voor latere versies van de dataset |
+| Hoogste volgnummer in een rit | 40 | NUMBER(3) volstaat |
+| Doortochten na middernacht | 51.497, laatste vertrek om 27:58:00 | Bevestigt de keuze voor seconden sinds middernacht: een DATE kan 27:58 niet voorstellen. 27:58:00 = 100.680 s, dus NUMBER(6) volstaat |
+| service_id's enkel in calendar_dates | 0 | Foreign key van dienstregeling_uitzondering naar dienstregeling kan zonder uitzonderingen |
+| Ontbrekende parent_stations | 0 | Zelfverwijzende foreign key op halte kan |
+| Doortochten met onbekende rit of halte | 0 / 0 | Alle foreign keys op doortocht kunnen afgedwongen worden |
+| Haltes met voorloopnul | 238 | Bevestigt VARCHAR2 voor halte_id |
+| Vertalingen | stop_name: 1.089 fr + 1.089 nl; route_long_name: 84 fr + 84 nl (van 86 lijnen); agency: genegeerd | Vertalingen hangen aan de naam (field_value), niet aan het id: veel haltes delen dezelfde naam (2.752 haltes, 1.089 namen). Koppelen via de naam. Zonder vertaling valt de Nederlandse naam terug op de Franse |
+
+## Staging en import
+
+- De GTFS-kolom `date` (calendar_dates) heet in staging `datum`, omdat DATE een gereserveerd woord is in Oracle.
+- stop_times wordt geladen met SQL*Loader in `DIRECT=TRUE`-modus: direct path load schrijft rechtstreeks naar de datablokken en is veel sneller bij 1,5 miljoen rijen.
+- De control files gebruiken `TRUNCATE`, zodat opnieuw laden geen dubbele rijen geeft.
