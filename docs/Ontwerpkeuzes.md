@@ -56,3 +56,19 @@ Bij elke keuze: wat ik gekozen heb en waarom. Aanvullen tijdens het bouwen.
 - De GTFS-kolom `date` (calendar_dates) heet in staging `datum`, omdat DATE een gereserveerd woord is in Oracle.
 - stop_times wordt geladen met SQL*Loader in `DIRECT=TRUE`-modus: direct path load schrijft rechtstreeks naar de datablokken en is veel sneller bij 1,5 miljoen rijen.
 - De control files gebruiken `TRUNCATE`, zodat opnieuw laden geen dubbele rijen geeft.
+
+## Datamodel (sql/02_model_tabellen.sql)
+
+- **Natuurlijke sleutels voor de GTFS-tabellen.** De GTFS-codes zijn uniek en stabiel binnen één dataset en blijven dus de primaire sleutel. Surrogaatsleutels overwogen: ze zouden `doortocht` en de indexen erop ruwweg 20 à 30 MB kleiner maken, maar elke koppeling bij de import vraagt dan een extra join op de GTFS-code. Bij deze datasetgrootte weegt die winst niet op tegen de extra complexiteit.
+- **Surrogaatsleutels voor de eigen tabellen** (gebruiker, storing, storing_log): daar bestaat geen natuurlijke code. Een e-mailadres kan veranderen en is daarom een UNIQUE-constraint, geen PK.
+- **`lijn` krijgt `lange_naam_fr` en `lange_naam_nl`**, net zoals `halte`: de vertalingen bestaan voor beide.
+- **Benoemde constraints** (pk_, fk_, uk_, ck_): een fout zoals `CK_STORING_DOEL violated` zegt meteen wat er mis is, en ze zijn herkenbaar in USER_CONSTRAINTS.
+- **ON DELETE CASCADE enkel bij identificerende relaties** (rit → doortocht, dienstregeling → uitzondering, gebruiker → favoriete_halte): die rijen hebben geen betekenis zonder hun ouder. Bij de andere relaties niet: een lijn verwijderen waaraan nog ritten hangen moet geweigerd worden.
+- **CHECK-constraints dwingen bedrijfsregels af in de database**, niet enkel in de applicatie: een storing heeft minstens een lijn of halte; een opgeloste storing heeft een eindtijd en een actieve niet; vertrek kan niet vóór aankomst liggen.
+- **Foreign keys krijgen in Oracle geen automatische index** (PK en UNIQUE wel). Indexen op FK-kolommen zoals `doortocht.halte_id` komen bewust in 05_indexen.sql, zodat het effect meetbaar is.
+
+## Sequences (sql/03_sequences.sql)
+
+- **Sequence als DEFAULT van de id-kolom** (Oracle 12c+): een INSERT zonder id krijgt automatisch het volgende nummer, zonder trigger.
+- **Waarom geen IDENTITY-kolom?** Die doet intern hetzelfde (Oracle maakt er zelf een sequence voor), maar een expliciete sequence is zichtbaar als apart object, kan door meerdere tabellen of scripts gebruikt worden en sluit aan bij de leerstof.
+- **CACHE 20:** sneller omdat nummers vooraf in het geheugen klaarstaan. Gevolg: na een herstart kunnen er gaten in de nummering zijn. Geen probleem: een surrogaatsleutel moet uniek zijn, niet aaneensluitend.
