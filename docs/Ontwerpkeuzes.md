@@ -49,6 +49,7 @@ Bij elke keuze: wat ik gekozen heb en waarom. Aanvullen tijdens het bouwen.
 | Ontbrekende parent_stations | 0 | Zelfverwijzende foreign key op halte kan |
 | Doortochten met onbekende rit of halte | 0 / 0 | Alle foreign keys op doortocht kunnen afgedwongen worden |
 | Haltes met voorloopnul | 238 | Bevestigt VARCHAR2 voor halte_id |
+| location_type | 2.439 haltes/perrons (0), 70 stations (1), 243 ingangen/uitgangen (2) | De eerste CHECK-constraint liet enkel 0 en 1 toe en weigerde daardoor de import. De constraint volgt nu de GTFS-specificatie (0–4), niet enkel de waarden die vandaag voorkomen, zodat een volgende versie van de dataset ook geldig blijft |
 | Vertalingen | stop_name: 1.089 fr + 1.089 nl; route_long_name: 84 fr + 84 nl (van 86 lijnen); agency: genegeerd | Vertalingen hangen aan de naam (field_value), niet aan het id: veel haltes delen dezelfde naam (2.752 haltes, 1.089 namen). Koppelen via de naam. Zonder vertaling blijft naam_nl leeg (NULL); de views vallen dan terug op de Franse naam |
 
 ## Staging en import
@@ -83,3 +84,25 @@ Bij elke keuze: wat ik gekozen heb en waarom. Aanvullen tijdens het bouwen.
 - **Herhaalbaar:** het script maakt de tabellen eerst leeg, kinderen voor ouders. `doortocht` met TRUNCATE (snel, geen undo, kan omdat geen enkele tabel ernaar verwijst); de andere met DELETE, omdat TRUNCATE niet mag op een tabel waarnaar een foreign key verwijst.
 - **Geen `APPEND`-hint voor doortocht:** een direct-path insert wordt door Oracle genegeerd zolang er foreign keys op de tabel staan. Constraints tijdelijk uitschakelen zou sneller zijn, maar dan controleert de database de data niet bij het laden.
 - **Statistieken verzamelen na het laden** (`DBMS_STATS.GATHER_SCHEMA_STATS`): de optimizer baseert zijn uitvoeringsplan op statistieken. Zonder actuele statistieken zijn de EXPLAIN PLAN-metingen bij de indexen niet betrouwbaar.
+
+## Indexen (sql/05_indexen.sql)
+
+- **Kernindex `idx_doortocht_halte_vertrek` op (halte_id, vertrek_sec)** voor de hoofdvraag van de app: de volgende vertrekken aan een halte.
+  - halte_id eerst, omdat daarop met `=` gezocht wordt; vertrek_sec tweede, omdat daarop een bereik (`>=`) en de sortering slaan. Binnen één halte staan de tijden dan al gesorteerd in de index, zodat Oracle kan stoppen na 10 rijen zonder aparte SORT-stap.
+  - Omgekeerde volgorde (vertrek_sec, halte_id) werkt veel slechter: binnen eenzelfde tijdstip staan alle haltes door elkaar.
+  - Dient tegelijk als index op de foreign key `fk_doortocht_halte`, omdat halte_id de eerste kolom is.
+- **Indexen op foreign keys:** Oracle maakt ze niet automatisch. Zonder index is een join op die kolom een full table scan, en bij een DELETE of UPDATE van de ouderrij vergrendelt Oracle de volledige kindtabel. Geen extra index waar de FK al de eerste kolom van een PK is (doortocht.rit_id, favoriete_halte.gebruiker_id, dienstregeling_uitzondering.service_id).
+- **Bewust geen index** op haltenamen (2.752 rijen: een full scan is al snel), op vertrek_sec alleen, en op kolommen met weinig verschillende waarden (richting, status).
+- **Prijs van een index:** extra opslag en tragere schrijfoperaties, omdat elke INSERT/UPDATE/DELETE ook de index moet bijwerken. Daarom enkel indexen die een concrete query uit de use case ondersteunen.
+
+### Meting (tests/04_performantie_indexen.sql)
+
+Dezelfde kernquery voor 50 haltes, tweede ronde gemeten (data al in het geheugen):
+
+| Situatie | Toegangspad (EXPLAIN PLAN) | Geschatte kost | Tijd voor 50 zoekopdrachten |
+|---|---|---|---|
+| A. Geen index | _invullen_ | _invullen_ | _invullen_ |
+| B. Index op halte_id | _invullen_ | _invullen_ | _invullen_ |
+| C. Index op (halte_id, vertrek_sec) | _invullen_ | _invullen_ | _invullen_ |
+
+Grootte: tabel doortocht _invullen_ MB, index idx_doortocht_halte_vertrek _invullen_ MB.
