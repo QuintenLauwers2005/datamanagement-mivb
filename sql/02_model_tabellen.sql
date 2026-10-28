@@ -83,7 +83,7 @@ CREATE TABLE halte (
   locatietype   NUMBER(1)     DEFAULT 0 NOT NULL,
   station_id    VARCHAR2(10),
   CONSTRAINT fk_halte_station FOREIGN KEY (station_id) REFERENCES halte (halte_id),  -- zelfverwijzing
-  CONSTRAINT ck_halte_type    CHECK (locatietype IN (0, 1)),  -- 0 = halte/perron, 1 = station
+  CONSTRAINT ck_halte_type    CHECK (locatietype IN (0, 1, 2, 3, 4)),  -- GTFS: 0 halte/perron, 1 station, 2 ingang, 3 knooppunt, 4 instapzone
   CONSTRAINT ck_halte_lat     CHECK (breedtegraad BETWEEN -90 AND 90),
   CONSTRAINT ck_halte_lon     CHECK (lengtegraad BETWEEN -180 AND 180)
 );

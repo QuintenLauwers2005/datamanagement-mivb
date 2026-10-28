@@ -49,7 +49,7 @@ Bij elke keuze: wat ik gekozen heb en waarom. Aanvullen tijdens het bouwen.
 | Ontbrekende parent_stations | 0 | Zelfverwijzende foreign key op halte kan |
 | Doortochten met onbekende rit of halte | 0 / 0 | Alle foreign keys op doortocht kunnen afgedwongen worden |
 | Haltes met voorloopnul | 238 | Bevestigt VARCHAR2 voor halte_id |
-| Vertalingen | stop_name: 1.089 fr + 1.089 nl; route_long_name: 84 fr + 84 nl (van 86 lijnen); agency: genegeerd | Vertalingen hangen aan de naam (field_value), niet aan het id: veel haltes delen dezelfde naam (2.752 haltes, 1.089 namen). Koppelen via de naam. Zonder vertaling valt de Nederlandse naam terug op de Franse |
+| Vertalingen | stop_name: 1.089 fr + 1.089 nl; route_long_name: 84 fr + 84 nl (van 86 lijnen); agency: genegeerd | Vertalingen hangen aan de naam (field_value), niet aan het id: veel haltes delen dezelfde naam (2.752 haltes, 1.089 namen). Koppelen via de naam. Zonder vertaling blijft naam_nl leeg (NULL); de views vallen dan terug op de Franse naam |
 
 ## Staging en import
 
@@ -72,3 +72,14 @@ Bij elke keuze: wat ik gekozen heb en waarom. Aanvullen tijdens het bouwen.
 - **Sequence als DEFAULT van de id-kolom** (Oracle 12c+): een INSERT zonder id krijgt automatisch het volgende nummer, zonder trigger.
 - **Waarom geen IDENTITY-kolom?** Die doet intern hetzelfde (Oracle maakt er zelf een sequence voor), maar een expliciete sequence is zichtbaar als apart object, kan door meerdere tabellen of scripts gebruikt worden en sluit aan bij de leerstof.
 - **CACHE 20:** sneller omdat nummers vooraf in het geheugen klaarstaan. Gevolg: na een herstart kunnen er gaten in de nummering zijn. Geen probleem: een surrogaatsleutel moet uniek zijn, niet aaneensluitend.
+
+## Transformatie (sql/04_transformatie.sql)
+
+- **Van staging naar model met INSERT ... SELECT**, met de omzetting naar de juiste datatypes in de SELECT. Fouten in de data komen zo als duidelijke Oracle-fout boven, in plaats van stil verkeerde waarden in te laden.
+- **Tijden:** `'HH:MM:SS'` wordt `uur*3600 + minuut*60 + seconde`. LPAD maakt eerst van `4:26:00` een `04:26:00`, zodat SUBSTR op vaste posities kan werken.
+- **Decimaalteken:** de coördinaten gebruiken een punt. Met Belgische instellingen verwacht Oracle een komma, daarom zet het script `NLS_NUMERIC_CHARACTERS` voor de sessie vast.
+- **Vertalingen:** gekoppeld via de originele tekst (`field_value`). `MAX(translation)` met GROUP BY garandeert één vertaling per naam, zodat de join geen dubbele haltes kan opleveren. Een ontbrekende vertaling blijft NULL: "geen vertaling bekend" is iets anders dan "de Nederlandse naam is gelijk aan de Franse". De views vullen het op met COALESCE.
+- **Haltes in twee stappen:** eerst alle haltes zonder station, daarna `station_id` invullen met een UPDATE. Bij de zelfverwijzing moet het station al bestaan voor een perron ernaar kan verwijzen; zo speelt de volgorde van de rijen geen rol.
+- **Herhaalbaar:** het script maakt de tabellen eerst leeg, kinderen voor ouders. `doortocht` met TRUNCATE (snel, geen undo, kan omdat geen enkele tabel ernaar verwijst); de andere met DELETE, omdat TRUNCATE niet mag op een tabel waarnaar een foreign key verwijst.
+- **Geen `APPEND`-hint voor doortocht:** een direct-path insert wordt door Oracle genegeerd zolang er foreign keys op de tabel staan. Constraints tijdelijk uitschakelen zou sneller zijn, maar dan controleert de database de data niet bij het laden.
+- **Statistieken verzamelen na het laden** (`DBMS_STATS.GATHER_SCHEMA_STATS`): de optimizer baseert zijn uitvoeringsplan op statistieken. Zonder actuele statistieken zijn de EXPLAIN PLAN-metingen bij de indexen niet betrouwbaar.
