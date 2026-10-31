@@ -134,3 +134,18 @@ Grootte: tabel doortocht 72 MB, idx_doortocht_halte_vertrek 37 MB, pk_doortocht 
 - **WITH READ ONLY:** via de views kan niemand data wijzigen. Wijzigingen gebeuren enkel rechtstreeks op de tabellen, door wie daar rechten voor heeft.
 - **v_ritten_per_lijn_per_uur is geen materialized view:** het rapport aggregeert over 1,5 miljoen doortochten en duurt een tot enkele seconden. Voor een rapport is dat aanvaardbaar. Een materialized view zou het resultaat opslaan en enkel bij een nieuwe import verversen; dat is het alternatief als het rapport vaak opgevraagd wordt.
 - **Beperking, bewust niet opgelost:** net na middernacht moet de app eigenlijk twee dienstdagen combineren (de nachtritten van gisteren met tijden > 24:00, en de eerste ritten van vandaag). De view maakt dat mogelijk, maar de logica hoort in de query van de app.
+
+## Triggers (sql/07_triggers.sql)
+
+- **Twee triggers op storing**, allebei rij-triggers (FOR EACH ROW):
+  - `trg_storing_eindtijd` (BEFORE UPDATE OF status): vult de eindtijd in wanneer een storing op OPGELOST gezet wordt, en maakt ze weer leeg bij heropenen.
+  - `trg_storing_audit` (AFTER INSERT OR UPDATE OR DELETE): schrijft elke wijziging met oude en nieuwe status weg in storing_log.
+- **BEFORE voor de eindtijd:** enkel in een BEFORE-trigger kan :NEW nog aangepast worden voor de rij weggeschreven wordt. De constraint ck_storing_eind eist een eindtijd bij een opgeloste storing; dankzij de trigger volstaat het dat de beheerder enkel de status wijzigt. De constraint blijft de echte garantie, de trigger maakt het gebruiksvriendelijk.
+- **AFTER voor de audit:** de log wordt pas geschreven als de wijziging zelf gelukt is, en ziet de definitieve waarden (ook de eindtijd die de BEFORE-trigger invulde).
+- **Rij-trigger en geen statement-trigger:** een statement-trigger wordt maar één keer per SQL-statement uitgevoerd en kent :OLD en :NEW niet. Een UPDATE van twee storingen tegelijk moet twee logregels opleveren (getest in tests/06_controle_triggers.sql).
+- **Eén trigger voor drie acties:** INSERTING, UPDATING en DELETING bepalen de actie. Bij INSERT is :OLD leeg, bij DELETE :NEW, vandaar `COALESCE(:NEW.storing_id, :OLD.storing_id)`.
+- **DEFAULT-waarden doen de rest:** log_id (sequence), gewijzigd_door (USER) en gewijzigd_op (SYSTIMESTAMP) worden niet door de trigger ingevuld. USER is de gebruiker die de wijziging uitvoert, niet de eigenaar van de trigger: zo zie je welke beheerder iets veranderde.
+- **Log in dezelfde transactie:** bij een ROLLBACK verdwijnt de logregel samen met de wijziging. Zo wordt enkel gelogd wat echt gebeurd is. Alternatief: een autonomous transaction (PRAGMA AUTONOMOUS_TRANSACTION) zou ook pogingen loggen die teruggedraaid worden; dat is nuttig voor beveiligingsaudits, maar hier niet gewenst.
+- **Geen foreign key van storing_log naar storing:** na een DELETE blijft de log bestaan, ook de regel die de verwijdering zelf vastlegt.
+
+- **Tijden in UTC:** SYSTIMESTAMP geeft de tijd van de databaseserver, en die draait in UTC (de test toonde 14:43 terwijl het in België 15:43 was). Bewust zo gelaten: opslaan in UTC en pas bij weergave omzetten naar Europe/Brussels voorkomt verwarring bij de overgang tussen zomer- en wintertijd. Omzetten kan met `FROM_TZ(gewijzigd_op, 'UTC') AT TIME ZONE 'Europe/Brussels'`.
