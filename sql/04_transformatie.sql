@@ -150,6 +150,20 @@ FROM   stg_stop_times;
 COMMIT;
 
 -- ---------------------------------------------------------------------
+-- 6b. Indexen op doortocht opnieuw opbouwen
+--     Tijdens het laden groeien de indexen rij per rij, met half gevulde
+--     blokken na elke splitsing. Gemeten: pk_doortocht 104 MB voor en
+--     56 MB na een rebuild. Herbouwt alle indexen die op dat moment
+--     op doortocht bestaan (ook die uit 05_indexen.sql bij een herlaadbeurt).
+-- ---------------------------------------------------------------------
+BEGIN
+  FOR i IN (SELECT index_name FROM user_indexes WHERE table_name = 'DOORTOCHT') LOOP
+    EXECUTE IMMEDIATE 'ALTER INDEX ' || i.index_name || ' REBUILD';
+  END LOOP;
+END;
+/
+
+-- ---------------------------------------------------------------------
 -- 7. Statistieken verzamelen
 --    De query optimizer kiest een uitvoeringsplan op basis van
 --    statistieken (aantal rijen, verdeling van waarden). Zonder actuele

@@ -73,6 +73,7 @@ Bij elke keuze: wat ik gekozen heb en waarom. Aanvullen tijdens het bouwen.
 - **Sequence als DEFAULT van de id-kolom** (Oracle 12c+): een INSERT zonder id krijgt automatisch het volgende nummer, zonder trigger.
 - **Waarom geen IDENTITY-kolom?** Die doet intern hetzelfde (Oracle maakt er zelf een sequence voor), maar een expliciete sequence is zichtbaar als apart object, kan door meerdere tabellen of scripts gebruikt worden en sluit aan bij de leerstof.
 - **CACHE 20:** sneller omdat nummers vooraf in het geheugen klaarstaan. Gevolg: na een herstart kunnen er gaten in de nummering zijn. Geen probleem: een surrogaatsleutel moet uniek zijn, niet aaneensluitend.
+- **Gaten in de praktijk:** de eerste teststoring kreeg storing_id 21. Een gefaalde insert gebruikt toch een nummer (ROLLBACK geeft het niet terug), en na een herstart van de database waren de 20 gecachte nummers verloren.
 
 ## Transformatie (sql/04_transformatie.sql)
 
@@ -83,6 +84,7 @@ Bij elke keuze: wat ik gekozen heb en waarom. Aanvullen tijdens het bouwen.
 - **Haltes in twee stappen:** eerst alle haltes zonder station, daarna `station_id` invullen met een UPDATE. Bij de zelfverwijzing moet het station al bestaan voor een perron ernaar kan verwijzen; zo speelt de volgorde van de rijen geen rol.
 - **Herhaalbaar:** het script maakt de tabellen eerst leeg, kinderen voor ouders. `doortocht` met TRUNCATE (snel, geen undo, kan omdat geen enkele tabel ernaar verwijst); de andere met DELETE, omdat TRUNCATE niet mag op een tabel waarnaar een foreign key verwijst.
 - **Geen `APPEND`-hint voor doortocht:** een direct-path insert wordt door Oracle genegeerd zolang er foreign keys op de tabel staan. Constraints tijdelijk uitschakelen zou sneller zijn, maar dan controleert de database de data niet bij het laden.
+- **Indexen op doortocht herbouwen na het laden** (`ALTER INDEX ... REBUILD`): tijdens het laden groeien ze rij per rij met half gevulde blokken. Gemeten: pk_doortocht van 104 naar 56 MB.
 - **Statistieken verzamelen na het laden** (`DBMS_STATS.GATHER_SCHEMA_STATS`): de optimizer baseert zijn uitvoeringsplan op statistieken. Zonder actuele statistieken zijn de EXPLAIN PLAN-metingen bij de indexen niet betrouwbaar.
 
 ## Indexen (sql/05_indexen.sql)
@@ -101,8 +103,34 @@ Dezelfde kernquery voor 50 haltes, tweede ronde gemeten (data al in het geheugen
 
 | Situatie | Toegangspad (EXPLAIN PLAN) | Geschatte kost | Tijd voor 50 zoekopdrachten |
 |---|---|---|---|
-| A. Geen index | _invullen_ | _invullen_ | _invullen_ |
-| B. Index op halte_id | _invullen_ | _invullen_ | _invullen_ |
-| C. Index op (halte_id, vertrek_sec) | _invullen_ | _invullen_ | _invullen_ |
+| A. Geen index | TABLE ACCESS FULL op doortocht, HASH JOIN, WINDOW SORT | 2648 | 1,04 s |
+| B. Index op halte_id | INDEX RANGE SCAN, daarna sorteren van alle ±540 doortochten (WINDOW SORT) | 327 | 0,09 s |
+| C. Index op (halte_id, vertrek_sec) | INDEX RANGE SCAN zonder sortering, stopt na 10 rijen (WINDOW NOSORT STOPKEY); NESTED LOOPS via PK_RIT | 34 | < 0,01 s |
 
-Grootte: tabel doortocht _invullen_ MB, index idx_doortocht_halte_vertrek _invullen_ MB.
+- **B → C:** bij B haalt Oracle alle doortochten van de halte op en sorteert ze; bij C staan ze al in volgorde in de index en stopt Oracle na 10 rijen (STOPKEY). Dit toont dat de volgorde van de kolommen in de index ertoe doet.
+- **Ook de join verandert:** bij A en B joint Oracle met RIT via een HASH JOIN (full scan van 73.322 ritten), omdat het ±540 rijen verwacht. Bij C zijn het er nog 10, en kiest de optimizer NESTED LOOPS met een opzoeking per rit via PK_RIT. De optimizer kiest zijn aanpak op basis van het verwachte aantal rijen.
+- **Tijden:** zonder index lijkt 1 s voor 50 zoekopdrachten nog snel, omdat de tabel volledig in het geheugen zit. Het verschil zit in de kost (factor 78) en in schaalbaarheid: met veel gelijktijdige gebruikers betekent A een full scan van 1,5 miljoen rijen per zoekopdracht.
+
+Grootte: tabel doortocht 72 MB, idx_doortocht_halte_vertrek 37 MB, pk_doortocht 104 MB na het laden en 56 MB na `ALTER INDEX ... REBUILD`.
+- Het grootste deel van het verschil komt door het laden: de PK bestond al en groeide rij per rij, met half gevulde blokken na elke splitsing. De andere index werd achteraf in één keer gebouwd en is daardoor compact. Daarom herbouwt 04_transformatie.sql de indexen op doortocht na het laden.
+- Het resterende verschil (56 tegenover 37 MB) komt door de lange natuurlijke sleutel (rit_id, tot 18 tekens). Surrogaatsleutels zouden naar schatting 35–45 MB besparen; bewust niet gedaan, omdat dat ruim binnen de limieten valt en de import eenvoudiger houdt.
+
+## Views (sql/06_views.sql)
+
+- **Waarom views:** ze verbergen de complexiteit van het model. De app hoeft niet te weten hoe dienstregelingen, uitzonderingen en seconden sinds middernacht werken. Ze zijn ook de basis voor de beveiliging: gebruikers krijgen rechten op views, niet op de tabellen.
+- **Vier views:**
+  - `v_actieve_dienst`: rekent calendar (periode + weekdagen) en calendar_dates (uitzonderingen) om naar een lijst (datum, service_id). Bouwsteen voor de andere views.
+  - `v_vertrekken`: hoofdview van de app, alle vertrekken per halte en dienstdag met lijn, bestemming en echt vertrekmoment.
+  - `v_ritten_per_lijn_per_uur`: rapport voor de analist.
+  - `v_actieve_storingen`: lopende storingen met leesbare namen, zonder de interne historiek.
+- **Geen view "vertrekken van vandaag":** de dataset loopt van 16/03 tot 12/04/2026, dus een filter op SYSDATE zou nu niets tonen. De views werken voor elke datum; de app geeft de datum mee. In een echte omgeving wordt de GTFS-feed wekelijks vernieuwd, en valt vandaag altijd binnen de periode.
+- **Weekdag via `datum - TRUNC(datum, 'IW')`:** geeft 0 (maandag) tot 6 (zondag), onafhankelijk van de taalinstellingen. `TO_CHAR(datum, 'D')` hangt af van NLS_TERRITORY: in België is maandag 1, in de VS is zondag 1.
+- **Datums genereren met `CONNECT BY LEVEL`:** één rij per dag tussen de vroegste start- en laatste einddatum, zonder een aparte kalendertabel.
+- **UNION in plaats van UNION ALL** in v_actieve_dienst: een dienst die volgens de weekdagen rijdt en ook als extra dag vermeld staat, mag maar één keer voorkomen.
+- **Eindhalte weggelaten in v_vertrekken:** de laatste halte van een rit is een aankomst, geen vertrek. Bij de eerste test toonde Montgomery trams 39 en 44 met bestemming MONTGOMERY: ritten die daar eindigen. Een doortocht telt enkel als vertrek als er voor dezelfde rit een doortocht met een hoger volgnummer bestaat (`EXISTS`); die controle gebruikt de primaire sleutel (rit_id, volgnummer), zichtbaar als INDEX RANGE SCAN op PK_DOORTOCHT in het plan. Een eerste versie gebruikte `NOT EXISTS` en hield daardoor net enkel de eindhaltes over; de controlequery toonde dat meteen.
+- **Echt vertrekmoment = dienstdag + vertrek_sec / 86400:** GTFS-tijden tellen vanaf het begin van de dienstdag. 27:58 op 18/03 wordt zo correct 19/03 om 03:58.
+- **De app filtert op vertrek_sec, niet op vertrekmoment:** vertrekmoment is een berekende kolom, en een voorwaarde daarop kan de index op (halte_id, vertrek_sec) niet gebruiken.
+- **View merging, maar niet overal:** v_vertrekken wordt door de optimizer samengevoegd met de query, waardoor de index op (halte_id, vertrek_sec) gebruikt wordt. v_actieve_dienst niet: een view met UNION en CONNECT BY kan niet uitgeschreven worden en wordt apart berekend (VIEW V_ACTIEVE_DIENST in het plan). Daardoor moet Oracle alle ±540 doortochten van de halte ophalen en sorteren (kost 570, tegenover 34 zonder dienstregeling in test C, en 2648 zonder index). Mogelijke verbetering: v_actieve_dienst als materialized view opslaan, want die verandert enkel bij een nieuwe import.
+- **WITH READ ONLY:** via de views kan niemand data wijzigen. Wijzigingen gebeuren enkel rechtstreeks op de tabellen, door wie daar rechten voor heeft.
+- **v_ritten_per_lijn_per_uur is geen materialized view:** het rapport aggregeert over 1,5 miljoen doortochten en duurt een tot enkele seconden. Voor een rapport is dat aanvaardbaar. Een materialized view zou het resultaat opslaan en enkel bij een nieuwe import verversen; dat is het alternatief als het rapport vaak opgevraagd wordt.
+- **Beperking, bewust niet opgelost:** net na middernacht moet de app eigenlijk twee dienstdagen combineren (de nachtritten van gisteren met tijden > 24:00, en de eerste ritten van vandaag). De view maakt dat mogelijk, maar de logica hoort in de query van de app.
