@@ -146,6 +146,36 @@ Grootte: tabel doortocht 72 MB, idx_doortocht_halte_vertrek 37 MB, pk_doortocht 
 - **Eén trigger voor drie acties:** INSERTING, UPDATING en DELETING bepalen de actie. Bij INSERT is :OLD leeg, bij DELETE :NEW, vandaar `COALESCE(:NEW.storing_id, :OLD.storing_id)`.
 - **DEFAULT-waarden doen de rest:** log_id (sequence), gewijzigd_door (USER) en gewijzigd_op (SYSTIMESTAMP) worden niet door de trigger ingevuld. USER is de gebruiker die de wijziging uitvoert, niet de eigenaar van de trigger: zo zie je welke beheerder iets veranderde.
 - **Log in dezelfde transactie:** bij een ROLLBACK verdwijnt de logregel samen met de wijziging. Zo wordt enkel gelogd wat echt gebeurd is. Alternatief: een autonomous transaction (PRAGMA AUTONOMOUS_TRANSACTION) zou ook pogingen loggen die teruggedraaid worden; dat is nuttig voor beveiligingsaudits, maar hier niet gewenst.
+- **Tijden in UTC:** SYSTIMESTAMP geeft de tijd van de databaseserver, en die draait in UTC (de test toonde 14:43 terwijl het in België 15:43 was). Bewust zo gelaten: opslaan in UTC en pas bij weergave omzetten naar Europe/Brussels voorkomt verwarring bij de overgang tussen zomer- en wintertijd. Omzetten kan met `FROM_TZ(gewijzigd_op, 'UTC') AT TIME ZONE 'Europe/Brussels'`.
 - **Geen foreign key van storing_log naar storing:** na een DELETE blijft de log bestaan, ook de regel die de verwijdering zelf vastlegt.
 
-- **Tijden in UTC:** SYSTIMESTAMP geeft de tijd van de databaseserver, en die draait in UTC (de test toonde 14:43 terwijl het in België 15:43 was). Bewust zo gelaten: opslaan in UTC en pas bij weergave omzetten naar Europe/Brussels voorkomt verwarring bij de overgang tussen zomer- en wintertijd. Omzetten kan met `FROM_TZ(gewijzigd_op, 'UTC') AT TIME ZONE 'Europe/Brussels'`.
+## Security (sql/08_rollen_en_gebruikers.sql en sql/09_grants.sql)
+
+- **Drie rollen, drie demogebruikers:**
+
+| Rol | Gebruiker | Wie | Mag |
+|---|---|---|---|
+| app_publiek | mivb_app | de reisinfo-app | vertrekken en actieve storingen lezen (via views), haltes en lijnen lezen, gebruikers registreren/verwijderen, naam wijzigen, favorieten bewaren |
+| beheerder | mivb_beheerder | medewerker storingen | storingen invoeren en wijzigen (niet verwijderen), auditlog lezen, lijnen en haltes opzoeken |
+| analist | mivb_analist | rapportering | alles lezen behalve persoonsgegevens, niets wijzigen |
+
+- **Twee scripts, twee gebruikers:** rollen en gebruikers aanmaken vraagt systeemprivileges (CREATE ROLE, CREATE USER), dus dat doet SYSTEM. Objectrechten geeft MIVB, de eigenaar van de objecten. MIVB zelf heeft geen DBA-rechten.
+- **Rollen in plaats van rechten per gebruiker:** een tweede beheerder krijgt met één `GRANT beheerder TO ...` alle juiste rechten, en een wijziging aan de rol geldt meteen voor iedereen met die rol.
+- **Least privilege:** elke rol krijgt enkel wat zijn taak vraagt. De demogebruikers hebben als systeemprivilege enkel CREATE SESSION, en geen QUOTA: ze bezitten zelf niets.
+- **Views als beveiligingslaag:** de app krijgt geen rechten op doortocht, rit of dienstregeling, enkel op v_vertrekken. Ze kan de logica (actieve dienst, eindhalte weglaten) dus niet omzeilen, en ziet enkel de kolommen die de view toont.
+- **Kolomrechten:** de app mag van gebruiker enkel de naam wijzigen, niet het e-mailadres. De beheerder mag storing_id en start_tijd van een storing niet wijzigen.
+- **Geen DELETE op storing voor de beheerder:** een storing wordt opgelost, niet verwijderd, zodat de historiek bewaard blijft.
+- **Auditlog niet te vervalsen:** de beheerder mag storing_log lezen, maar niet schrijven. De trigger schrijft erin met de rechten van zijn eigenaar (definer rights), dus de beheerder heeft geen INSERT-recht nodig. `gewijzigd_door` toont toch de beheerder, omdat USER de ingelogde gebruiker is.
+- **SELECT op de sequences:** wie een rij toevoegt in een tabel met `DEFAULT seq.NEXTVAL`, moet SELECT hebben op die sequence. Daarom krijgt app_publiek seq_gebruiker en beheerder seq_storing.
+- **Privacy:** de analist ziet gebruiker en favoriete_halte niet: e-mailadressen zijn persoonsgegevens die hij voor rapporten niet nodig heeft. De app mag een gebruiker verwijderen (recht op vergetelheid, GDPR); de favorieten verdwijnen mee via ON DELETE CASCADE.
+- **ORA-00942 tegenover ORA-01031:** zonder enig recht op een object meldt Oracle dat het niet bestaat (ORA-00942), zodat een gebruiker zelfs niet te weten komt welke tabellen er zijn. Met SELECT maar zonder bv. UPDATE volgt ORA-01031 (insufficient privileges).
+- **Objecten met schemanaam (mivb.v_vertrekken):** de andere gebruikers verwijzen naar de objecten met de naam van het schema ervoor. Alternatieven zijn synoniemen, of `ALTER SESSION SET CURRENT_SCHEMA = mivb` bij het inloggen; voor drie demogebruikers niet nodig.
+- **Demowachtwoorden in het script:** bewust, zodat de tests zonder extra stappen werken. In een echte omgeving horen wachtwoorden niet in een script, en zou het app-account bijvoorbeeld via een wallet inloggen.
+
+## Securitytest (`07_controle_security.sql`)
+
+Het script logt achtereenvolgens in als elke demogebruiker (`mivb_app`, `mivb_beheerder` en `mivb_analist`) en controleert per stap of de verwachte uitkomst optreedt: **OK** (actie mag), **ORA-01031** (object is zichtbaar maar de actie mag niet) of **ORA-00942** (geen enkel recht → object is onzichtbaar).
+
+In plaats van `ACCEPT ... HIDE` gebruikt het script de substitutievariabele `&&mivb_pw`. Het voordeel is dat SQL*Plus het wachtwoord slechts één keer vraagt en daarna hergebruikt bij elke `CONNECT`. Het nadeel is dat het wachtwoord in de SQL*Plus-sessie zichtbaar blijft (in tegenstelling tot `HIDE`).
+
+Bij de `REVOKE` en `GRANT` in sectie 5 staat `mivb.` voor de viewnaam (`mivb.v_actieve_storingen`). Dit is nodig omdat die statements als de eigenaar (MIVB) worden uitgevoerd, maar de objectnaam anders niet eenduidig is wanneer de huidige schema-context niet MIVB is.
