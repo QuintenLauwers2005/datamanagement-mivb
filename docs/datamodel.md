@@ -1,6 +1,6 @@
 # Datamodel – MIVB reisinfo-databank
 
-Fysiek datamodel zoals het in Oracle gebouwd wordt (sql/02_model_tabellen.sql). Het conceptuele ERD staat in erd_conceptueel.png.
+Fysiek datamodel zoals het in Oracle gebouwd wordt (sql/02_model_tabellen.sql). Het conceptuele ERD staat in [erd_conceptueel.drawio](erd_conceptueel.drawio) (openen met draw.io).
 Dit diagram rendert automatisch op GitHub (Mermaid). Lengtes van datatypes staan in de commentaar.
 
 ```mermaid

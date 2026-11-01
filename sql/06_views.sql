@@ -5,7 +5,7 @@
 -- Views verbergen de complexiteit van het model voor de gebruikers:
 -- de app en de analist hoeven niet te weten hoe dienstregelingen,
 -- uitzonderingen en seconden sinds middernacht werken.
--- Ze zijn ook de basis voor de beveiliging (08_grants.sql): gebruikers
+-- Ze zijn ook de basis voor de beveiliging (09_grants.sql): gebruikers
 -- krijgen rechten op de views, niet op de tabellen.
 --
 -- CREATE OR REPLACE: het script is herhaalbaar zonder eerst te droppen.
