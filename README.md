@@ -192,7 +192,7 @@ zodat de tests zonder extra stappen werken. In een echte omgeving hoort dat niet
 
 ## Documentatie
 
-- [docs/use_case.md](docs/use_case.md): de use case *(nog te schrijven)*
+- [docs/use_case.md](docs/use_case.md): de use case
 - [docs/ontwerpkeuzes.md](docs/ontwerpkeuzes.md): elke keuze met de reden erachter
 - [docs/datamodel.md](docs/datamodel.md): het fysieke datamodel (Mermaid, rendert op GitHub)
 - [docs/erd_conceptueel.drawio](docs/erd_conceptueel.drawio): het conceptuele ERD in Barker-notatie (openen met draw.io)
