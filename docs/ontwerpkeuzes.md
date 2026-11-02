@@ -115,6 +115,37 @@ Grootte: tabel doortocht 72 MB, idx_doortocht_halte_vertrek 37 MB, pk_doortocht 
 - Het grootste deel van het verschil komt door het laden: de PK bestond al en groeide rij per rij, met half gevulde blokken na elke splitsing. De andere index werd achteraf in één keer gebouwd en is daardoor compact. Daarom herbouwt 04_transformatie.sql de indexen op doortocht na het laden.
 - Het resterende verschil (56 tegenover 37 MB) komt door de lange natuurlijke sleutel (rit_id, tot 18 tekens). Surrogaatsleutels zouden naar schatting 35–45 MB besparen; bewust niet gedaan, omdat dat ruim binnen de limieten valt en de import eenvoudiger houdt.
 
+### Uitvoeringsplan van de kernquery via v_vertrekken (D5)
+
+Dezelfde kernquery, maar nu via de view `v_vertrekken` (halte 0089, 18/03, vanaf 8:00).
+
+**Wat ik zag.** EXPLAIN PLAN koos een plan zonder de kernindex (plan hash 2578046037, kost 510): Oracle begon bij `v_actieve_dienst`, zocht alle ritten van die diensten via `IDX_RIT_SERVICE` en controleerde per rit via `PK_DOORTOCHT` of hij langs halte 0089 komt.
+
+**Hoe ik de oorzaak zocht.**
+- *Nieuwe statistieken?* `USER_TABLES.LAST_ANALYZED` toonde dat de automatische statistiekenjob van Oracle (onderhoudsvenster van zaterdag 31/10) de tabellen opnieuw geanalyseerd had, met nieuwe histogrammen op o.a. `RIT.SERVICE_ID`. Met `DBMS_STATS.RESTORE_TABLE_STATS` de statistieken van 28/10 teruggezet: hetzelfde plan. De nieuwe statistieken waren dus niet de oorzaak.
+- *Ontbreekt de index?* Nee: `USER_INDEXES` toont hem als VALID en VISIBLE.
+- *Kiest de optimizer bewust?* Ja: met een hint (`INDEX(v_vertrekken.d idx_doortocht_halte_vertrek)`) gebruikt het plan de index, maar met een hogere geschatte kost (580 tegenover 510).
+
+**De oorzaak: een verkeerde schatting in `v_actieve_dienst`.** Het werkelijke plan (`DBMS_XPLAN.DISPLAY_CURSOR` met `ALLSTATS LAST`) toont geschatte (E-Rows) naast echte (A-Rows) aantallen:
+
+| Stap | Geschat | Echt |
+|---|---|---|
+| diensten volgens het weekpatroon (filter met `DECODE` op de weekdag) | 1 | 90 |
+| `v_actieve_dienst` (na uitzonderingen) | 13 | 75 |
+
+Oracle kan uit de statistieken niet afleiden hoeveel diensten er op een bepaalde weekdag rijden: de `DECODE` verbergt dat. Met 13 diensten lijkt de weg via `IDX_RIT_SERVICE` goedkoop; met de echte 75 zijn dat ±18.000 ritten om te controleren.
+
+**De meting.** Beide plannen voor 50 haltes, tweede ronde: zonder hint 0,15 s, met hint 0,16 s, telkens 480 rijen. Geen verschil.
+
+**Waarom geen verschil: een adaptief plan.** Het werkelijke plan (plan hash 3025061342) is een *adaptive plan*. Op drie plaatsen telt een STATISTICS COLLECTOR tijdens de uitvoering het echte aantal rijen. Omdat er 75 diensten kwamen in plaats van 13, schakelde Oracle om: de weg via `IDX_RIT_SERVICE` werd niet gebruikt, wel `IDX_DOORTOCHT_HALTE_VERTREK`, een full scan van RIT en HASH JOINs. Het plan uit EXPLAIN PLAN is dus nooit uitgevoerd.
+
+**Besluiten.**
+- EXPLAIN PLAN is een voorspelling vooraf. Wat er echt gebeurt, toont pas `DISPLAY_CURSOR` met `ALLSTATS LAST`; een lagere kost op papier is geen sneller plan. Meten blijft nodig.
+- Via de view duurt de kernquery 0,15 s voor 50 haltes, tegenover < 0,01 s in situatie C rechtstreeks op de tabellen. Het verschil zit niet in de index, maar in `v_actieve_dienst`, die bij elke vraag de datums (`CONNECT BY`), weekdagen en uitzonderingen opnieuw berekent.
+- De verkeerde schatting blijft bestaan; het adaptieve plan vangt ze hier op, maar dat is niet gegarandeerd bij andere queries. Mogelijke verbetering, bewust niet uitgevoerd: de actieve diensten per datum vooraf berekenen in een tabel of materialized view (±28 dagen × 75 diensten). Die heeft echte statistieken, zodat de schatting klopt, en hoeft niet bij elke vraag opnieuw berekend te worden.
+- Bijkomende controle van de view-logica: aan halte 0089 zijn er 462 doortochten, waarvan 231 overblijven na de controle op een volgende halte. Montgomery is het eindpunt van tram 39 en 44: de helft zijn aankomsten, waar je niet meer kan opstappen, en die laat de view terecht weg.
+- Voor `DISPLAY_CURSOR` moet MIVB de cursor cache (`v$sql`) kunnen lezen. Daarvoor kreeg MIVB tijdelijk `SELECT_CATALOG_ROLE` (als SYSTEM), en daarna weer ingetrokken: least privilege, ook voor de eigenaar.
+
 ## Views (sql/06_views.sql)
 
 - **Waarom views:** ze verbergen de complexiteit van het model. De app hoeft niet te weten hoe dienstregelingen, uitzonderingen en seconden sinds middernacht werken. Ze zijn ook de basis voor de beveiliging: gebruikers krijgen rechten op views, niet op de tabellen.

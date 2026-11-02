@@ -72,3 +72,53 @@ ROLLBACK;
 --    Verwachte fout: ORA-42399: cannot perform a DML operation on a read-only view
 UPDATE v_actieve_storingen SET omschrijving = 'mag niet';
 ROLLBACK;
+
+-- 9 en 10: uitzonderingen op Paasmaandag 6 april 2026 (zie docs/use_case.md)
+--    Beide queries delen dezelfde indeling van een dienst (WITH soort):
+--      weekdagdienst = rijdt op maandag, niet op zondag
+--      zondagsdienst = rijdt op zondag, niet op maandag
+--      ander         = al de rest (bv. maandag en zondag allebei)
+--    De verwachte aantallen komen uit de GTFS-bestanden (calendar.txt en
+--    calendar_dates.txt); bevestig ze met een run.
+
+-- 9. Welke soort diensten worden op 06/04 geschrapt (type 2) en welke
+--    komen erbij (type 1)?
+--    Verwacht: type 1 = 69 zondagsdiensten, type 2 = 99 weekdagdiensten.
+WITH soort AS (
+  SELECT service_id,
+         CASE WHEN maandag = 1 AND zondag = 0 THEN 'weekdagdienst'
+              WHEN zondag = 1 AND maandag = 0 THEN 'zondagsdienst'
+              ELSE 'ander' END AS soort
+  FROM   dienstregeling
+)
+SELECT u.uitzonderingstype, s.soort, COUNT(*) AS aantal
+FROM   dienstregeling_uitzondering u
+JOIN   soort s ON s.service_id = u.service_id
+WHERE  u.datum = DATE '2026-04-06'
+GROUP  BY u.uitzonderingstype, s.soort
+ORDER  BY 1, 2;
+
+-- 10. Wat maakt v_actieve_dienst ervan? Paasmaandag naast een gewone
+--     zondag (22/03) en een gewone maandag (30/03).
+--     Verwacht: 22/03 = 69 zondagsdiensten, 30/03 = 75 weekdagdiensten,
+--     06/04 = 69 zondagsdiensten: Paasmaandag rijdt als een zondag.
+--
+--     Waarom worden er op 06/04 99 weekdagdiensten geschrapt, terwijl er
+--     op een gewone maandag maar 75 rijden? Volgens het weekpatroon zijn
+--     er op elke maandag in de periode 99 weekdagdiensten geldig, maar
+--     calendar_dates schrapt er ook op een gewone maandag al 24 (op 30/03
+--     bijvoorbeeld). Op 06/04 worden ze alle 99 geschrapt. Voor die 24 had
+--     het schrappen dus geen extra effect tegenover een gewone maandag.
+WITH soort AS (
+  SELECT service_id,
+         CASE WHEN maandag = 1 AND zondag = 0 THEN 'weekdagdienst'
+              WHEN zondag = 1 AND maandag = 0 THEN 'zondagsdienst'
+              ELSE 'ander' END AS soort
+  FROM   dienstregeling
+)
+SELECT a.datum, s.soort, COUNT(*) AS aantal
+FROM   v_actieve_dienst a
+JOIN   soort s ON s.service_id = a.service_id
+WHERE  a.datum IN (DATE '2026-03-22', DATE '2026-03-30', DATE '2026-04-06')
+GROUP  BY a.datum, s.soort
+ORDER  BY 1, 2;

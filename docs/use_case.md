@@ -41,8 +41,9 @@ Het model bestaat uit twee delen:
   **haltes**; elke passage is een **doortocht** met een aankomst- en vertrektijd.
   Op welke dagen een rit rijdt, staat in de **dienstregeling** met haar
   **uitzonderingen**. Een voorbeeld uit de data: op maandag 6 april 2026
-  (Paasmaandag) vervalt de weekdagregeling (type 2) en rijdt er een
-  zondagsregeling (type 1). Een halte kan bij een station horen.
+  (Paasmaandag) vervallen alle 99 weekdagregelingen (type 2) en komen er 69
+  zondagsregelingen bij (type 1). Dat zijn er evenveel als op een gewone zondag
+  (69 op 22 maart): de MIVB rijdt die dag dus een zondagsdienst. Een halte kan bij een station horen.
 - **De eigen toevoegingen.** Een **gebruiker** bewaart **favoriete haltes**
   (veel-op-veel). Een **storing** treft een lijn, een halte of allebei (minstens
   één van beide, afgedwongen met een CHECK-constraint), en elke wijziging eraan
