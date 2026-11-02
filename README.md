@@ -34,21 +34,28 @@ https://files.mobilitydatabase.org/mdb-1088/mdb-1088-202603170054/mdb-1088-20260
 Gebruik precies deze versie. Op de Mobility Database staat standaard de nieuwste
 feed, en daarmee kloppen de aantallen in de tests niet meer (1.559.649 doortochten,
 2.752 haltes). De tests gebruiken woensdag 18 maart 2026 als testdag, en die datum
-zit enkel in deze versie.
+valt niet in elke versie van de feed.
 
 De GTFS-bestanden staan niet in de repository (`data/raw/` staat in `.gitignore`).
 Pak de zip uit in `data/raw/`. Gebruikt worden: `routes.txt`, `stops.txt`,
 `calendar.txt`, `calendar_dates.txt`, `trips.txt`, `stop_times.txt` en `translations.txt`.
 
+Licentie: CC BY 4.0. *Source: STIB-MIVB – Open Data – 16 maart 2026. Contains data
+originally published by STIB-MIVB, modified by Quinten Lauwers.* Zie [docs/bronnen.md](docs/bronnen.md).
+
 ## Vereisten
 
-**Oracle XE in Docker.** De image `gvenzl/oracle-xe` (Oracle XE 21c) met de pluggable
-database `XEPDB1` op poort 1521:
+**Oracle XE in Docker.** De image `gvenzl/oracle-xe:latest` (Oracle XE 21.3.0) met de
+pluggable database `XEPDB1` op poort 1521:
 
 ```powershell
-docker run -d --name oracle -p 1521:1521 -e ORACLE_PASSWORD=<wachtwoord_system> gvenzl/oracle-xe:21
+docker run -d --name oracle -p 1521:1521 -e ORACLE_PASSWORD=<wachtwoord_system> gvenzl/oracle-xe:latest
 docker logs -f oracle
 ```
+
+Dit project is gebouwd met de image met digest
+`sha256:c2682a4216b0fe65537912c4a049c7e5c15a85bb7c94bb8137d5f2d2eef60603`. `latest` kan
+later naar een andere versie wijzen; `gvenzl/oracle-xe@sha256:...` haalt precies deze image op.
 
 De eerste start duurt enkele minuten. De databank is klaar wanneer in de logs
 `DATABASE IS READY TO USE!` verschijnt. Daarna start je de container met `docker start oracle`.
@@ -197,4 +204,4 @@ zodat de tests zonder extra stappen werken. In een echte omgeving hoort dat niet
 - [docs/datamodel.md](docs/datamodel.md): het fysieke datamodel (Mermaid, rendert op GitHub)
 - [docs/erd_conceptueel.drawio](docs/erd_conceptueel.drawio): het conceptuele ERD in Barker-notatie (openen met draw.io)
 - docs/erd_conceptueel.png: export van het conceptuele ERD *(nog toe te voegen)*
-- [docs/bronnen.md](docs/bronnen.md): gebruikte bronnen *(nog te schrijven)*
+- [docs/bronnen.md](docs/bronnen.md): gebruikte bronnen
