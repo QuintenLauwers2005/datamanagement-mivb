@@ -45,17 +45,16 @@ originally published by STIB-MIVB, modified by Quinten Lauwers.* Zie [docs/bronn
 
 ## Vereisten
 
-**Oracle XE in Docker.** De image `gvenzl/oracle-xe:latest` (Oracle XE 21.3.0) met de
+**Oracle XE in Docker.** De image `gvenzl/oracle-xe` (Oracle XE 21.3.0) met de
 pluggable database `XEPDB1` op poort 1521:
 
 ```powershell
-docker run -d --name oracle -p 1521:1521 -e ORACLE_PASSWORD=<wachtwoord_system> gvenzl/oracle-xe:latest
+docker run -d --name oracle -p 1521:1521 -e ORACLE_PASSWORD=<wachtwoord_system> gvenzl/oracle-xe@sha256:c2682a4216b0fe65537912c4a049c7e5c15a85bb7c94bb8137d5f2d2eef60603
 docker logs -f oracle
 ```
 
-Dit project is gebouwd met de image met digest
-`sha256:c2682a4216b0fe65537912c4a049c7e5c15a85bb7c94bb8137d5f2d2eef60603`. `latest` kan
-later naar een andere versie wijzen; `gvenzl/oracle-xe@sha256:...` haalt precies deze image op.
+De digest legt vast dat je exact de image krijgt waarmee dit project gebouwd is. Op
+2 november 2026 wezen de tags `latest` en `21` naar diezelfde digest, maar een tag kan later veranderen.
 
 De eerste start duurt enkele minuten. De databank is klaar wanneer in de logs
 `DATABASE IS READY TO USE!` verschijnt. Daarna start je de container met `docker start oracle`.

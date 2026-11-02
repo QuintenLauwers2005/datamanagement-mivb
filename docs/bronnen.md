@@ -33,7 +33,7 @@ Docker, Inc. (n.d.). *Docker Desktop* (versie 4.96.1) [Software]. https://www.do
 
 Oracle. (2021). *Oracle Database Express Edition* (versie 21c, 21.3.0) [Software]. Geraadpleegd op 2 november 2026, van https://www.oracle.com/database/technologies/appdev/xe.html
 
-Venzl, G. (2024). *gvenzl/oracle-xe* (tag latest, digest sha256:c2682a4216b0fe65537912c4a049c7e5c15a85bb7c94bb8137d5f2d2eef60603) [Docker-image]. Docker Hub. Geraadpleegd op 2 november 2026, van https://hub.docker.com/r/gvenzl/oracle-xe
+Venzl, G. (2024). *gvenzl/oracle-xe* (digest sha256:c2682a4216b0fe65537912c4a049c7e5c15a85bb7c94bb8137d5f2d2eef60603; op 2 november 2026 de tags latest en 21) [Docker-image]. Docker Hub. Geraadpleegd op 2 november 2026, van https://hub.docker.com/r/gvenzl/oracle-xe
 
 Oracle. (n.d.). *Oracle Instant Client: Basic, SQL\*Plus en Tools* (versie 23.26.3.0.0) [Software]. Geraadpleegd op 2 november 2026, van https://www.oracle.com/database/technologies/instant-client.html
 
