@@ -29,7 +29,7 @@ Bronvermelding volgens die voorwaarden: *Source: STIB-MIVB – Open Data – 16 
 
 ## Software
 
-Docker, Inc. (n.d.). *Docker* [Software]. https://www.docker.com/
+Docker, Inc. (n.d.). *Docker Desktop* (versie 4.96.1) [Software]. https://www.docker.com/
 
 Oracle. (2021). *Oracle Database Express Edition* (versie 21c, 21.3.0) [Software]. Geraadpleegd op 2 november 2026, van https://www.oracle.com/database/technologies/appdev/xe.html
 
@@ -72,6 +72,8 @@ Hambrouck, W. (2026). *Sequences* [Slides]. Erasmushogeschool Brussel.
 Hambrouck, W. (2026). *Indexes* [Slides]. Erasmushogeschool Brussel.
 
 Hambrouck, W. (2026). *PL/SQL* [Cursusmateriaal]. Erasmushogeschool Brussel.
+
+Hambrouck, W. (2024–2025). *Werkverdeling-databank: opgave, ERD en datamodel* [Cursusmateriaal, vak Data Essentials, eerste jaar]. Erasmushogeschool Brussel. Gebruikt als voorbeeld voor de Barker-notatie van het conceptuele ERD.
 
 ## Gebruik van AI
 Claude Opus 5.5(Anthropic): Voor structuur, logica en debugging.
